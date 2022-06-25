@@ -3,10 +3,10 @@ require('dotenv').config()
 const express = require("express");
 const bodyParser = require("body-parser");
 const ejs = require("ejs");
-const mongoose = require("mongoose");
-const bcrypt = require("bcrypt");
-
-const saltRounds = 10;
+const passport = require('passport');
+const mongoose = require('mongoose');
+const passportLocalMongoose = require('passport-local-mongoose');
+const session = require('express-session');
 
 mongoose.connect("mongodb://localhost:27017/usersDB");
 
@@ -18,6 +18,15 @@ app.use(bodyParser.urlencoded(
 ));
 app.use(express.static("public"));
 
+app.use(session({
+    secret : process.env.SECRET,
+    resave : false,
+    saveUninitialized : false
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
+
 /////////////////////////////////////////////---------     Userschema
 
 const userSchema = new mongoose.Schema({
@@ -25,7 +34,13 @@ const userSchema = new mongoose.Schema({
     password : String
 });
 
+userSchema.plugin(passportLocalMongoose);
+
 const User = new mongoose.model('User', userSchema);
+
+passport.use(User.createStrategy());
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
 
 ////////////////////////////////////////////----------    root route /
 
@@ -41,19 +56,16 @@ app.route("/register")
         res.render("register");
     })
     .post(function(req,res){
-        bcrypt.hash(req.body.password, saltRounds, function(err, hash){
-            const newUser = new User({
-                username : req.body.username,
-                password : hash
-            });
-            newUser.save(function(err) {
-                if(err){
-                    console.log(err);
-                }else{
-                    res.render('secrets');
-                }
-            });
-        });        
+        User.register({username :  req.body.username }, req.body.password, function(err, user){
+            if(err){
+                console.log(err);
+                res.redirect("/register");
+            }else{
+                passport.authenticate("local")(req, res, function(){
+                    res.redirect("/secrets");
+                });
+            }
+        });
     });
 
 //////////////////////////////////////////////----------    /login
@@ -63,26 +75,42 @@ app.route("/login")
         res.render("login");
     })
     .post(function(req,res){
-        const username = req.body.username;
-        const password = req.body.password;
-        User.findOne(
-            { username : username},
-            function(err,foundUser){
-                bcrypt.compare(password, foundUser.password, function(err, result) {
-                    if(result){
-                        res.render("secrets");
-                    }else{
-                        res.send("<h1>Wrong Password!</h1>")
-                    }
+        const user = new User({
+            username : req.body.username,
+            password : req.body.password
+        });
+        req.login(user, function(err){
+            if(err){
+                console.log(err);
+            }else{
+                passport.authenticate("local")(req,res,function(){
+                    res.redirect("/secrets");
                 });
             }
-        );
+        });
     });
         
-/////////////////////////////////////////////-----------    
+/////////////////////////////////////////////-----------    /secrets
 
+app.route("/secrets")
+    .get(function(req,res){
+        if(req.isAuthenticated()){
+            res.render("secrets");
+        }else{
+            res.redirect("/login");
+        }
+    });
 
+///////////////////////////////////////////------------      /logout
+
+app.route("/logout")
+    .get(function(req, res){
+        req.logout(function(err){
+            console.log(err);
+        });
+        res.redirect("/");
+    });
 
 app.listen(3000, function(){
-    console.log("Server is running in port 3000");
+    console.log("Server is running in port 3000................");
 });
