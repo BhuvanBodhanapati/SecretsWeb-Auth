@@ -38,7 +38,8 @@ app.use(passport.session());
 const userSchema = new mongoose.Schema({
     username : String,
     password : String,
-    googleId : String
+    googleId : String,
+    secret : String
 });
 
 userSchema.plugin(passportLocalMongoose);
@@ -64,7 +65,6 @@ passport.use(new GoogleStrategy({
     callbackURL: "http://localhost:3000/auth/google/secrets"
   },
   function(accessToken, refreshToken, profile, cb) {
-    console.log(profile);
     User.findOrCreate({ googleId: profile.id }, function (err, user) {
       return cb(err, user);
     });
@@ -137,11 +137,11 @@ app.route("/login")
 
 app.route("/secrets")
     .get(function(req,res){
-        if(req.isAuthenticated()){
-            res.render("secrets");
-        }else{
-            res.redirect("/login");
-        }
+        User.find({ secret : { $ne : null}}, function(err, foundUsers){
+            res.render("secrets",{
+                usersWithSecret : foundUsers
+            });
+        });
     });
 
 ///////////////////////////////////////////------------      /logout
@@ -149,10 +149,37 @@ app.route("/secrets")
 app.route("/logout")
     .get(function(req, res){
         req.logout(function(err){
-            console.log(err);
+            if(err){
+                console.log(err);
+            }else{
+                res.redirect("/");
+            }
         });
-        res.redirect("/");
+        
     });
+
+///////////////////////////////////////////------------      /submit
+
+app.route("/submit")
+    .get(function(req,res){
+        if(req.isAuthenticated()){
+            res.render("submit");
+        }else{
+            res.redirect("/login");
+        }
+    })
+    .post(function(req, res){
+        const mySecret = req.body.secret;
+            User.findByIdAndUpdate(req.user._id, {secret : mySecret}, function(err){
+                if(err){
+                    console.log(err);
+                }else{
+                    res.redirect("secrets");
+                }
+            });
+    });
+
+////////////////////////////////////////////------------      /
 
 app.listen(3000, function(){
     console.log("Server is running in port 3000................");
